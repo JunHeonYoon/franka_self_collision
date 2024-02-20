@@ -1,0 +1,138 @@
+from srmt.planning_scene import PlanningScene
+import numpy as np
+from math import sqrt, pi
+import time
+import os
+import datetime as dt
+import sys
+import pickle
+import argparse
+import itertools
+from multiprocessing import Process, Queue
+
+# np.printoptions(precision=3, suppress=True, linewidth=100, threshold=10000)
+np.set_printoptions(threshold=sys.maxsize)
+title_font = {
+    'fontsize': 16,
+    'fontweight': 'bold'
+}
+
+
+def main(args):
+    # Number of threads
+    if args.num_th > os.cpu_count():
+        args.num_th = os.cpu_count()
+        print("core: {}".format(args.num_th))
+
+    # Parameters
+    joint_limit = np.array([[-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973],  # min 
+                            [ 2.8973, 1.7628, 2.8973,-0.0698, 2.8973, 3.7525, 2.8973]]) # max
+    
+    
+    def work(id, result):
+        dataset = {}
+        normal_q_set = []
+        nerf_q_set= []
+        coll_set  = []
+        min_dist_set = []
+
+        # Create Planning Scene
+        pc = PlanningScene(arm_names=["panda"], arm_dofs=[7], base_link="world", topic_name="planning_scene_suhan" + str(id))
+
+        np.random.seed(id)
+        t0 = time.time()
+        for iter in range(int(args.num_q / args.num_th)):
+            q = np.random.uniform(low=joint_limit[0], high=joint_limit[1], size=7)
+            pc.display(q)
+            min_dist = pc.min_distance(q)
+                
+            normal_q_set.append( np.array([(q[q_idx] - joint_limit[0, q_idx]) / (joint_limit[1, q_idx] - joint_limit[0, q_idx]) for q_idx in range(7)]) )
+            nerf_q_set.append( np.concatenate([q, np.cos(q), np.sin(q)], axis=0) )
+
+            if min_dist == -1: # collide
+                coll_set.append(1)
+                min_dist_set.append(0.0)
+            else:
+                coll_set.append(0)
+                min_dist_set.append(min_dist)
+
+            if (iter / int(args.num_q / args.num_th)*100) % 10 == 0 :
+                t1 = time.time()
+                print("{0:.1f}% of dataset accomplished on th:0! (Time: {1:.02f})".format(iter / int(args.num_q / args.num_th)*100, t1-t0))
+
+        dataset["normalize_q"] = normal_q_set
+        dataset["nerf_q"] = nerf_q_set
+        dataset["coll"] = coll_set
+        dataset["min_dist"] = min_dist_set
+        dataset["id"] = id
+
+        result.put(dataset)
+        return
+
+
+    result = Queue()
+    threads =[]
+
+    dataset = {}
+    dataset["normalize_q"] = []
+    dataset["nerf_q"] = []
+    dataset["coll"] = []
+    dataset["min_dist"] = []
+
+    for i in range(args.num_th):
+        th = Process(target=work, args=(i,result))
+        threads.append(th)
+    
+    print("Start multi-threading!")
+    for i in range(args.num_th):
+        threads[i].start()
+
+    for i in range(args.num_th):
+        data = result.get()
+        dataset["normalize_q"] = dataset["normalize_q"] + data["normalize_q"]
+        dataset["nerf_q"] = dataset["nerf_q"] + data["nerf_q"]
+        dataset["coll"] = dataset["coll"] + data["coll"]
+        dataset["min_dist"] = dataset["min_dist"] + data["min_dist"]
+
+    for i in range(args.num_th):
+        threads[i].join()
+
+
+    date = dt.datetime.now()
+    data_dir = "data/{:04d}_{:02d}_{:02d}_{:02d}_{:02d}_{:02d}".format(date.year, date.month, date.day, date.hour, date.minute,date.second)
+    os.mkdir(data_dir)
+
+    with open(data_dir + "/dataset.pickle", "wb") as f:
+        dataset["normalize_q"] = np.array(dataset["normalize_q"])
+        dataset["nerf_q"] = np.array(dataset["nerf_q"])
+        dataset["coll"] = np.array(dataset["coll"])
+        dataset["min_dist"] = np.array(dataset["min_dist"])
+        pickle.dump(dataset,f)
+        print("Total number of data: {} (coll: {}, free: {})".format(dataset["coll"].size, np.sum(dataset["coll"]==1), np.sum(dataset["coll"]==0)))
+
+    with open(data_dir + "/param_setting.txt", "w", encoding='UTF-8') as f:
+        params = {"number of dataset": dataset["coll"].size,
+                  "number of collsion data": np.sum(dataset["coll"]==1),
+                  "number of free data": np.sum(dataset["coll"]==0)
+                  }
+        for param, value in params.items():
+            f.write(f'{param} : {value}\n')
+
+    import shutil
+    folder_path = "data/"
+    num_save = 3
+    order_list = sorted(os.listdir(folder_path), reverse=True)[1:]
+    remove_folder_list = order_list[num_save:]
+    for rm_folder in remove_folder_list:
+        shutil.rmtree(folder_path+rm_folder)
+
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--num_th", type=int, default=32)
+    parser.add_argument("--num_q", type=int, default=10000000)
+
+    args = parser.parse_args()
+    main(args)
+
