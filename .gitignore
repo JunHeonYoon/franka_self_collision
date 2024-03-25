@@ -5,4 +5,5 @@ data_gen/data/
 neural_network/dataset/
 neural_network/log
 neural_network/model/
+neural_network/parameter/
 test.py
