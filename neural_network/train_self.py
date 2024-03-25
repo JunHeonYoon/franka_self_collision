@@ -16,7 +16,7 @@ import tqdm
 class CollisionNetDataset(Dataset):
     """
     data pickle contains dict
-        'num_q_step' :  
+        'q'          : joint angle
         'normalize_q': normalized joint angle
         'nerf_q'     : nerf joint angle
         'coll'       : collision vector data (coll: 1, free: 0)
@@ -25,12 +25,10 @@ class CollisionNetDataset(Dataset):
     def __init__(self, file_name,):
         with open(file_name, 'rb') as f:
             dataset = pickle.load(f)
-            # self.normalize_q = dataset['normalize_q']
-            self.nerf_q = dataset['nerf_q']
+            self.q = dataset['q']
             self.coll = dataset['coll']
             self.min_dist = dataset['min_dist']*100 # meter to centi-meter
-        # print('normalize_q shape: ', self.normalize_q.shape)
-        print('nerf_q shape: ', self.nerf_q.shape)
+        print('q shape: ', self.q.shape)
         print('min_dist shape: ', self.min_dist.shape)
 
     def __len__(self):
@@ -43,8 +41,7 @@ class CollisionNetDataset(Dataset):
         if isinstance(idx, int):
             idx = [idx]
     
-        # return np.array(self.normalize_q[idx],dtype=np.float32), np.array(self.min_dist[idx],dtype=np.float32)
-        return np.array(self.nerf_q[idx],dtype=np.float32), np.array(self.min_dist[idx],dtype=np.float32)
+        return np.array(self.q[idx],dtype=np.float32), np.array(self.min_dist[idx],dtype=np.float32)
 
 def main(args):
     train_ratio = 0.95
@@ -71,18 +68,15 @@ def main(args):
     
     suffix = 'rnd{}'.format(args.seed)
 
-    file_name = "dataset/2024_02_19_18_09_35/dataset.pickle"
+    file_name = "dataset/2024_03_25_14_29_10/dataset.pickle"
 
     log_file_name = log_dir + 'log_{}'.format(suffix)
     model_name = '{}'.format(suffix)
 
     """
-    layer size = [7,  hidden1, hidden2, hidden3, hidden4, 1 (mininum dist)] : input as normalized_q
-                                    or
-    layer size = [21, hidden1, hidden2, hidden3, hidden4, 1 (mininum dist)] : input as nerf_q
+    layer size = [7, (21 if nerf),  hidden1, hidden2, , ..., 1(mininum dist)]
     """
-    # layer_size = [7, 256, 256, 256, 256, 1]
-    layer_size = [21, 256, 256, 256, 256, 1]
+    layer_size = [7, 128, 64, 1]
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -116,7 +110,8 @@ def main(args):
 
     collnet = SelfCollNet(fc_layer_sizes=layer_size,
                           batch_size=args.batch_size,
-                          device=device).to(device)
+                          device=device,
+                          nerf=True).to(device)
     print(collnet)
 
     optimizer = torch.optim.Adam(collnet.parameters(), lr=args.learning_rate, weight_decay=1e-5)
