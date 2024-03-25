@@ -31,6 +31,7 @@ def main(args):
     
     def work(id, result):
         dataset = {}
+        q_set = []
         normal_q_set = []
         nerf_q_set= []
         coll_set  = []
@@ -46,6 +47,7 @@ def main(args):
             pc.display(q)
             min_dist = pc.min_distance(q)
                 
+            q_set.append(q)
             normal_q_set.append( np.array([(q[q_idx] - joint_limit[0, q_idx]) / (joint_limit[1, q_idx] - joint_limit[0, q_idx]) for q_idx in range(7)]) )
             nerf_q_set.append( np.concatenate([q, np.cos(q), np.sin(q)], axis=0) )
 
@@ -60,6 +62,7 @@ def main(args):
                 t1 = time.time()
                 print("{0:.1f}% of dataset accomplished on th:0! (Time: {1:.02f})".format(iter / int(args.num_q / args.num_th)*100, t1-t0))
 
+        dataset["q"] = q_set
         dataset["normalize_q"] = normal_q_set
         dataset["nerf_q"] = nerf_q_set
         dataset["coll"] = coll_set
@@ -75,6 +78,7 @@ def main(args):
 
     dataset = {}
     dataset["normalize_q"] = []
+    dataset["q"] = []
     dataset["nerf_q"] = []
     dataset["coll"] = []
     dataset["min_dist"] = []
@@ -90,6 +94,7 @@ def main(args):
     for i in range(args.num_th):
         data = result.get()
         dataset["normalize_q"] = dataset["normalize_q"] + data["normalize_q"]
+        dataset["q"] = dataset["q"] + data["q"]
         dataset["nerf_q"] = dataset["nerf_q"] + data["nerf_q"]
         dataset["coll"] = dataset["coll"] + data["coll"]
         dataset["min_dist"] = dataset["min_dist"] + data["min_dist"]
@@ -103,6 +108,7 @@ def main(args):
     os.mkdir(data_dir)
 
     with open(data_dir + "/dataset.pickle", "wb") as f:
+        dataset["q"] = np.array(dataset["q"])
         dataset["normalize_q"] = np.array(dataset["normalize_q"])
         dataset["nerf_q"] = np.array(dataset["nerf_q"])
         dataset["coll"] = np.array(dataset["coll"])
