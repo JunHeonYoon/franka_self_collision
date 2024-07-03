@@ -4,11 +4,34 @@
   <xacro:arg name="arm_id" default="panda" />
   <xacro:arg name="hand" default="true" />
 
+  <link name="base">
+    <visual>
+      <origin xyz="-0.24 0 0.425" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.6 0.9 0.85" />
+      </geometry>
+      <material name="White">
+        <color rgba="1.0 1.0 1.0 1.0"/>
+      </material>
+    </visual>
+    <collision>
+      <origin xyz="-0.24 0 0.425" rpy="0 0 0  "/>
+      <geometry>
+        <box size="0.6 0.9 0.85" />
+      </geometry>
+    </collision>
+  </link>
 
- <link name="world"/>
+  <xacro:include filename="env_box.xacro"/>
+  <xacro:box id="wall_1" connected_to="base" xyz="-0.59 0.3 1.0" size="0.1 0.33 2.0"/>
+  <xacro:box id="wall_2" connected_to="base" xyz="0.21 0.5 1.0" size="1.7 0.1 2.0"/>
+  <xacro:box id="table" connected_to="base" xyz="0.56 0.065 0.365" size="1.0 0.77 0.73"/>
+
+
+ <!-- <link name="world"/> -->
   <!-- single arm with gripper -->
   <xacro:include filename="$(find franka_description)/robots/common/franka_arm.xacro"/>
-  <xacro:franka_arm arm_id="$(arg arm_id)" connected_to="world"  xyz="0 0 0" gazebo="true"
+  <xacro:franka_arm arm_id="$(arg arm_id)" connected_to="base"  xyz="0 0 0.856" gazebo="true"
                     joint_limits="${xacro.load_yaml('$(find franka_description)/robots/panda/joint_limits.yaml')}"/>
   <xacro:if value="$(arg hand)">
       <xacro:include filename="$(find franka_description)/robots/common/franka_hand.xacro"/>

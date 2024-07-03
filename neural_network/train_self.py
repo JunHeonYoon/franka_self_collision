@@ -44,7 +44,7 @@ class CollisionNetDataset(Dataset):
         return np.array(self.q[idx],dtype=np.float32), np.array(self.min_dist[idx],dtype=np.float32)
 
 def main(args):
-    train_ratio = 0.95
+    train_ratio = 0.98
     test_ratio = 0.002
     
     date = dt.datetime.now()
@@ -68,7 +68,7 @@ def main(args):
     
     suffix = 'rnd{}'.format(args.seed)
 
-    file_name = "dataset/2024_03_25_14_29_10/dataset.pickle"
+    file_name = "dataset/2024_07_03_11_05_17/dataset.pickle"
 
     log_file_name = log_dir + 'log_{}'.format(suffix)
     model_name = '{}'.format(suffix)
@@ -76,7 +76,7 @@ def main(args):
     """
     layer size = [7, (21 if nerf),  hidden1, hidden2, , ..., 1(mininum dist)]
     """
-    layer_size = [7, 128, 64, 1]
+    layer_size = [7, 128, 64, 32, 1]
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -105,7 +105,10 @@ def main(args):
 
     def loss_fn_fc(y_hat, y):
         RMSE = torch.nn.functional.mse_loss(y_hat, y, reduction="mean")
-        return RMSE
+        mask = y < 2
+        COLL_RMSE = torch.nn.functional.mse_loss(y_hat[mask], y[mask], reduction="mean") if mask.any() else 0
+
+        return RMSE + COLL_RMSE
     
 
     collnet = SelfCollNet(fc_layer_sizes=layer_size,
@@ -159,8 +162,8 @@ def main(args):
             loss_test = loss_fc_test
         scheduler.step(loss_fc_test)
         
-        coll_hat_bin = min_dist_hat < 0.05
-        coll_bin = test_min_dist < 0.05
+        coll_hat_bin = min_dist_hat < 2
+        coll_bin = test_min_dist < 2
 
         test_accuracy = (coll_bin == coll_hat_bin).sum().item() / test_min_dist.size(dim=0)
 
@@ -194,12 +197,14 @@ def main(args):
         print("[Train] fc loss  : {:.3f}".format(loss_train.item()))
         print("[Test]  fc loss  : {:.3f}".format(loss_test.item()))
         print("[Test]  Accuracy : {}".format(test_accuracy))
+        print("[Test]  TP       : {}".format(true_positives / truth_positives))
+        print("[Test]  TN       : {}".format(true_negatives / truth_negatives))
         print("min_dist         : {}".format(test_min_dist.detach().cpu().numpy()[:2]))
         print("min_dist_hat     : {}".format(min_dist_hat.detach().cpu().numpy()[:2]))
         print("=========================================================================================")
 
         with open(log_file_name, 'a') as f:
-            f.write("Epoch: {} (Saved at {}) / Train Loss: {} / Test Loss: {} / Test Accuracy: {} / TP: {} / FP: {} / TN: {} / FN: {}".format(epoch,
+            f.write("Epoch: {} (Saved at {}) / Train Loss: {} / Test Loss: {} / Test Accuracy: {} / TP: {} / FP: {} / TN: {} / FN: {}\n".format(epoch,
                                                                                                                                               epoch - e_notsaved,
                                                                                                                                               loss_train,
                                                                                                                                               loss_test,

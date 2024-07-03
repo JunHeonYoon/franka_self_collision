@@ -5,11 +5,9 @@
   <!-- By default, we will load or override the robot_description -->
   <arg name="load_robot_description" default="true"/>
   
-  <arg name="scene_type" default="single_arm"/>
 
   <include file="$(dirname)/planning_context.launch">
     <arg name="load_robot_description" value="$(arg load_robot_description)" />
-    <arg name="srdf_type" value="$(arg scene_type)" />
   </include>
 
   <!-- By default, hide joint_state_publisher's GUI in 'fake' controller_manager mode -->

@@ -25,7 +25,8 @@ def main(args):
     # Parameters
     joint_limit = np.array([[-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973],
                             [ 2.8973, 1.7628, 2.8973,-0.0698, 2.8973, 3.7525, 2.8973]])
-    panda_joint_init = np.array([0.0, 0.0, 0.0, -1.0471, 0.0, 1.0471, 0.7853])
+    panda_joint_init = np.array([0.0, 0.0, 0.0, -pi/2, 0.0, pi/2, pi/4])
+    # panda_joint_init = np.array([0.0, 0.0, 0.0, 0, 0.0, 0, 0])
 
     # Create Planning Scene
     pc = PlanningScene(arm_names=["panda"], arm_dofs=[7], base_link="world")
@@ -91,7 +92,9 @@ def main(args):
 
 
     pc.display(panda_joint_init)
-    time.sleep(1)
+    # time.sleep(1)
+    # pc.display(panda_joint_init)
+    # time.sleep(1000000)
 
     # ax1 = plt.figure(1).add_subplot(231)
     # ax1.set_title("depth image1", fontsize=16, fontweight='bold', pad=20)
@@ -121,9 +124,10 @@ def main(args):
         print(min_dist)
         print(min_dist_)
         print("\t\t")
-        if min_dist_ == -1:
+        if min_dist_ < 0:
             print("collide")
-        time.sleep(1)
+            time.sleep(2.0)
+        time.sleep(0.5)
 
 
 
@@ -131,7 +135,7 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_grid", type=int, default=64)
+    # parser.add_argument("--num_grid", type=int, default=64)
     args = parser.parse_args()
     main(args)
 

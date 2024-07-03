@@ -1,10 +1,7 @@
 from srmt.planning_scene import PlanningScene
 import numpy as np
-import random
-import math
-import time
+from math import pi
 import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
 from models_self import SelfCollNet
 import torch
 
@@ -18,15 +15,16 @@ joint_limit = np.array([[-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973
 pc = PlanningScene(arm_names=["panda"], arm_dofs=[7], base_link="world")
 
 # NN model load
-date = "2024_02_19_18_43_11/"
+date = "2024_07_03_11_07_18/"
 model_file_name = "self_collision.pkl"
 
 model_dir = "model/self/" + date + model_file_name
 device = torch.device('cpu')
 
 model = SelfCollNet(
-    fc_layer_sizes=[21, 256, 256, 256, 256, 1],
+    fc_layer_sizes=[7, 128, 64, 32, 1],
     batch_size=1,
+    nerf=True,
     device=device).to(device)
 
 model_state_dict = torch.load(model_dir, map_location=device)
@@ -41,7 +39,7 @@ lines2 = []
 line1, = ax.plot([],[], label='ans', color="blue", linewidth=4.0, linestyle='--')
 line2, = ax.plot([],[], label='pred', color = "red", linewidth=2.0)
 ax.legend()
-ax.set_ylim([-0.1,0.35])
+ax.set_ylim([-5,15])
 ax.grid()
 
 
@@ -62,32 +60,39 @@ y_hat_data = np.zeros((1))
 
 
 
-i=0
-for iter in range(1,100000):
+# q_set = np.loadtxt("/home/yoonjunheon/git/MPCC/C++/debug.txt")
+# print(q_set.shape)
+
+for iter in range(1,1000):
+# for iter, q in enumerate(q_set):
+    print("=================================")
     joint_state =  np.random.uniform(low=joint_limit[0], high=joint_limit[1], size=7)
+    # joint_state =  qq
+    print(joint_state)
+    # joint_state =  np.array([0,0,0,-pi/2,0,pi/2,pi/4])
     pc.display(joint_state)
-    min_dist = pc.min_distance(joint_state)
+    min_dist = pc.min_distance(joint_state)*100
     with torch.no_grad():
         model.eval()
-        nerf_state = np.concatenate([joint_state, np.cos(joint_state), np.sin(joint_state)],axis=0).astype(np.float32)
-        NN_output = model(torch.from_numpy(nerf_state.reshape(1, -1)).to(device))
-    min_dist_pred = NN_output.cpu().detach().numpy()[0] * 0.01
+        x = torch.from_numpy(joint_state.reshape(1, -1).astype(np.float32)).to(device)
+        jac = torch.autograd.functional.jacobian(model, x)
+        NN_output = model(x)
+    min_dist_pred = NN_output.cpu().detach().numpy()[0]
     
-    x_data = np.append(x_data, np.array([i]), axis=0)
+    x_data = np.append(x_data, np.array([iter]), axis=0)
     y_data = np.append(y_data, np.array([min_dist]), axis=0)
     y_hat_data = np.append(y_hat_data, min_dist_pred, axis=0)
     
 
     plt_func(fig, line1, line2, x_data, y_data, y_hat_data)
     
-    print("=================================")
     print(min_dist)
     print(min_dist_pred)
+    print(jac)
     print("=================================")
 
     plt.pause(0.5)
-    if min_dist == 0:
-        plt.pause(5)
+    # if min_dist == 0:
+    #     plt.pause(0.1)
 
-    i+=1
 plt.show()

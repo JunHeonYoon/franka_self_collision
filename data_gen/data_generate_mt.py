@@ -33,7 +33,6 @@ def main(args):
         dataset = {}
         q_set = []
         normal_q_set = []
-        nerf_q_set= []
         coll_set  = []
         min_dist_set = []
 
@@ -49,14 +48,12 @@ def main(args):
                 
             q_set.append(q)
             normal_q_set.append( np.array([(q[q_idx] - joint_limit[0, q_idx]) / (joint_limit[1, q_idx] - joint_limit[0, q_idx]) for q_idx in range(7)]) )
-            nerf_q_set.append( np.concatenate([q, np.cos(q), np.sin(q)], axis=0) )
 
-            if min_dist == -1: # collide
+            if min_dist < 0: # collide
                 coll_set.append(1)
-                min_dist_set.append(0.0)
             else:
                 coll_set.append(0)
-                min_dist_set.append(min_dist)
+            min_dist_set.append(min_dist)
 
             if (iter / int(args.num_q / args.num_th)*100) % 10 == 0 :
                 t1 = time.time()
@@ -64,7 +61,6 @@ def main(args):
 
         dataset["q"] = q_set
         dataset["normalize_q"] = normal_q_set
-        dataset["nerf_q"] = nerf_q_set
         dataset["coll"] = coll_set
         dataset["min_dist"] = min_dist_set
         dataset["id"] = id
@@ -79,7 +75,6 @@ def main(args):
     dataset = {}
     dataset["normalize_q"] = []
     dataset["q"] = []
-    dataset["nerf_q"] = []
     dataset["coll"] = []
     dataset["min_dist"] = []
 
@@ -95,7 +90,6 @@ def main(args):
         data = result.get()
         dataset["normalize_q"] = dataset["normalize_q"] + data["normalize_q"]
         dataset["q"] = dataset["q"] + data["q"]
-        dataset["nerf_q"] = dataset["nerf_q"] + data["nerf_q"]
         dataset["coll"] = dataset["coll"] + data["coll"]
         dataset["min_dist"] = dataset["min_dist"] + data["min_dist"]
 
@@ -110,7 +104,6 @@ def main(args):
     with open(data_dir + "/dataset.pickle", "wb") as f:
         dataset["q"] = np.array(dataset["q"])
         dataset["normalize_q"] = np.array(dataset["normalize_q"])
-        dataset["nerf_q"] = np.array(dataset["nerf_q"])
         dataset["coll"] = np.array(dataset["coll"])
         dataset["min_dist"] = np.array(dataset["min_dist"])
         pickle.dump(dataset,f)
