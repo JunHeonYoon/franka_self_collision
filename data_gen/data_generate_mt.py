@@ -32,8 +32,6 @@ def main(args):
     def work(id, result):
         dataset = {}
         q_set = []
-        normal_q_set = []
-        coll_set  = []
         min_dist_set = []
 
         # Create Planning Scene
@@ -47,12 +45,6 @@ def main(args):
             min_dist = pc.min_distance(q)
                 
             q_set.append(q)
-            normal_q_set.append( np.array([(q[q_idx] - joint_limit[0, q_idx]) / (joint_limit[1, q_idx] - joint_limit[0, q_idx]) for q_idx in range(7)]) )
-
-            if min_dist < 0: # collide
-                coll_set.append(1)
-            else:
-                coll_set.append(0)
             min_dist_set.append(min_dist)
 
             if (iter / int(args.num_q / args.num_th)*100) % 10 == 0 :
@@ -60,8 +52,6 @@ def main(args):
                 print("{0:.1f}% of dataset accomplished on th:0! (Time: {1:.02f})".format(iter / int(args.num_q / args.num_th)*100, t1-t0))
 
         dataset["q"] = q_set
-        dataset["normalize_q"] = normal_q_set
-        dataset["coll"] = coll_set
         dataset["min_dist"] = min_dist_set
         dataset["id"] = id
 
@@ -73,9 +63,7 @@ def main(args):
     threads =[]
 
     dataset = {}
-    dataset["normalize_q"] = []
     dataset["q"] = []
-    dataset["coll"] = []
     dataset["min_dist"] = []
 
     for i in range(args.num_th):
@@ -88,9 +76,7 @@ def main(args):
 
     for i in range(args.num_th):
         data = result.get()
-        dataset["normalize_q"] = dataset["normalize_q"] + data["normalize_q"]
         dataset["q"] = dataset["q"] + data["q"]
-        dataset["coll"] = dataset["coll"] + data["coll"]
         dataset["min_dist"] = dataset["min_dist"] + data["min_dist"]
 
     for i in range(args.num_th):
@@ -103,16 +89,14 @@ def main(args):
 
     with open(data_dir + "/dataset.pickle", "wb") as f:
         dataset["q"] = np.array(dataset["q"])
-        dataset["normalize_q"] = np.array(dataset["normalize_q"])
-        dataset["coll"] = np.array(dataset["coll"])
         dataset["min_dist"] = np.array(dataset["min_dist"])
         pickle.dump(dataset,f)
-        print("Total number of data: {} (coll: {}, free: {})".format(dataset["coll"].size, np.sum(dataset["coll"]==1), np.sum(dataset["coll"]==0)))
+        print("Total number of data: {} (coll: {}, free: {})".format(dataset["min_dist"].size, np.sum(dataset["min_dist"]<=0), np.sum(dataset["min_dist"]>0)))
 
     with open(data_dir + "/param_setting.txt", "w", encoding='UTF-8') as f:
-        params = {"number of dataset": dataset["coll"].size,
-                  "number of collsion data": np.sum(dataset["coll"]==1),
-                  "number of free data": np.sum(dataset["coll"]==0)
+        params = {"number of dataset": dataset["min_dist"].size,
+                  "number of collsion data": np.sum(dataset["min_dist"]<=0),
+                  "number of free data": np.sum(dataset["min_dist"]>0)
                   }
         for param, value in params.items():
             f.write(f'{param} : {value}\n')
