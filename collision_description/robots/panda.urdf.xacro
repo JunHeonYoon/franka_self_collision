@@ -6,7 +6,8 @@
 
   <link name="base">
     <visual>
-      <origin xyz="-0.24 0 0.425" rpy="0 0 0"/>
+      <!-- <origin xyz="-0.24 0 0.425" rpy="0 0 0"/> -->
+      <origin xyz="0.085 0 0.425" rpy="0 0 0"/>
       <geometry>
         <box size="0.6 0.9 0.85" />
       </geometry>
@@ -15,17 +16,18 @@
       </material>
     </visual>
     <collision>
-      <origin xyz="-0.24 0 0.425" rpy="0 0 0  "/>
+      <!-- <origin xyz="-0.24 0 0.425" rpy="0 0 0  "/> -->
+      <origin xyz="0.085 0 0.425" rpy="0 0 0  "/>
       <geometry>
         <box size="0.6 0.9 0.85" />
       </geometry>
     </collision>
   </link>
 
-  <xacro:include filename="env_box.xacro"/>
+  <!-- <xacro:include filename="env_box.xacro"/>
   <xacro:box id="wall_1" connected_to="base" xyz="-0.59 0.3 1.0" size="0.1 0.33 2.0"/>
   <xacro:box id="wall_2" connected_to="base" xyz="0.21 0.5 1.0" size="1.7 0.1 2.0"/>
-  <xacro:box id="table" connected_to="base" xyz="0.56 0.065 0.365" size="1.0 0.77 0.73"/>
+  <xacro:box id="table" connected_to="base" xyz="0.56 0.065 0.365" size="1.0 0.77 0.73"/> -->
 
 
  <!-- <link name="world"/> -->
