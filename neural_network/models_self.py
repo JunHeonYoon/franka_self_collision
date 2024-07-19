@@ -20,7 +20,7 @@ class FullyConnectedNet(nn.Module):
                 in_size = in_size*3
             self.MLP.add_module(name="L{:d}".format(i), module=nn.Linear(in_size, out_size))
             if i+2 < len(layer_sizes):
-                self.MLP.add_module(name="D{:d}".format(i), module=nn.Dropout(0))
+                self.MLP.add_module(name="D{:d}".format(i), module=nn.Dropout(0.1))
                 self.MLP.add_module(name="A{:d}".format(i), module=nn.ReLU())
 
 

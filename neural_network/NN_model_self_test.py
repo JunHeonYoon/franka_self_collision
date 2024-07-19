@@ -12,10 +12,10 @@ joint_limit = np.array([[-2.8973,-1.7628,-2.8973,-3.0718,-2.8973,-0.0175,-2.8973
                         [ 2.8973, 1.7628, 2.8973,-0.0698, 2.8973, 3.7525, 2.8973]])
 
 # Create Planning Scene
-pc = PlanningScene(arm_names=["panda"], arm_dofs=[7], base_link="world")
+pc = PlanningScene(arm_names=["panda"], arm_dofs=[7], base_link="base")
 
 # NN model load
-date = "2024_07_03_11_07_18/"
+date = "2024_07_04_15_03_14/"
 model_file_name = "self_collision.pkl"
 
 model_dir = "model/self/" + date + model_file_name
@@ -39,7 +39,7 @@ lines2 = []
 line1, = ax.plot([],[], label='ans', color="blue", linewidth=4.0, linestyle='--')
 line2, = ax.plot([],[], label='pred', color = "red", linewidth=2.0)
 ax.legend()
-ax.set_ylim([-5,15])
+ax.set_ylim([-20,15])
 ax.grid()
 
 
@@ -92,7 +92,7 @@ for iter in range(1,1000):
     print("=================================")
 
     plt.pause(0.5)
-    # if min_dist == 0:
-    #     plt.pause(0.1)
+    if min_dist < 0:
+        plt.pause(1)
 
 plt.show()

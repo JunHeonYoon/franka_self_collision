@@ -17,16 +17,12 @@ class CollisionNetDataset(Dataset):
     """
     data pickle contains dict
         'q'          : joint angle
-        'normalize_q': normalized joint angle
-        'nerf_q'     : nerf joint angle
-        'coll'       : collision vector data (coll: 1, free: 0)
-        'min_dist'   : minimum distance btw robot links (coll: -1)
+        'min_dist'   : minimum distance btw robot links
     """
     def __init__(self, file_name,):
         with open(file_name, 'rb') as f:
             dataset = pickle.load(f)
             self.q = dataset['q']
-            self.coll = dataset['coll']
             self.min_dist = dataset['min_dist']*100 # meter to centi-meter
         print('q shape: ', self.q.shape)
         print('min_dist shape: ', self.min_dist.shape)
@@ -44,8 +40,9 @@ class CollisionNetDataset(Dataset):
         return np.array(self.q[idx],dtype=np.float32), np.array(self.min_dist[idx],dtype=np.float32)
 
 def main(args):
-    train_ratio = 0.98
-    test_ratio = 0.002
+    train_ratio = 0.99
+    validation_ratio = 0.005
+    test_ratio = 1 - (train_ratio + validation_ratio)
     
     date = dt.datetime.now()
     data_dir = "{:04d}_{:02d}_{:02d}_{:02d}_{:02d}_{:02d}/".format(date.year, date.month, date.day, date.hour, date.minute,date.second)
@@ -58,7 +55,7 @@ def main(args):
     if not os.path.exists(model_dir): os.makedirs(model_dir)
 
     folder_path = 'model/checkpoints/self/'
-    num_save = 3
+    num_save = 10
     order_list = sorted(os.listdir(folder_path), reverse=True)
     remove_folder_list = order_list[num_save:]
     for rm_folder in remove_folder_list:
@@ -68,7 +65,7 @@ def main(args):
     
     suffix = 'rnd{}'.format(args.seed)
 
-    file_name = "dataset/2024_07_03_11_05_17/dataset.pickle"
+    file_name = "dataset/2024_07_16_22_54_39/dataset.pickle"
 
     log_file_name = log_dir + 'log_{}'.format(suffix)
     model_name = '{}'.format(suffix)
@@ -76,7 +73,7 @@ def main(args):
     """
     layer size = [7, (21 if nerf),  hidden1, hidden2, , ..., 1(mininum dist)]
     """
-    layer_size = [7, 128, 64, 32, 1]
+    layer_size = [7, 256, 64, 1]
 
     torch.manual_seed(args.seed)
     if torch.cuda.is_available():
@@ -90,11 +87,13 @@ def main(args):
     read_time = time.time()
     dataset = CollisionNetDataset(file_name=file_name)
     train_size = int(train_ratio * len(dataset))
+    val_size = int(validation_ratio * len(dataset))
     test_size = int(test_ratio * len(dataset))
-    val_size = len(dataset) - (train_size + test_size)
     train_dataset, test_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, test_size, val_size])
     train_data_loader = DataLoader(
         dataset=train_dataset, batch_size=args.batch_size, shuffle=True)
+    val_data_loader = DataLoader(
+        dataset=val_dataset, batch_size=len(val_dataset))
     test_data_loader = DataLoader(
         dataset=test_dataset, batch_size=len(test_dataset))
     end_time = time.time()
@@ -104,11 +103,14 @@ def main(args):
     
 
     def loss_fn_fc(y_hat, y):
-        RMSE = torch.nn.functional.mse_loss(y_hat, y, reduction="mean")
-        mask = y < 2
-        COLL_RMSE = torch.nn.functional.mse_loss(y_hat[mask], y[mask], reduction="mean") if mask.any() else 0
+        free_mask = (y > 5)
+        FREE_RMSE = torch.nn.functional.mse_loss(y_hat[free_mask], y[free_mask], reduction="mean") if free_mask.any() else 0
+        close_mask = (y < 5) & (y > 0)
+        CLOSE_RMSE = torch.nn.functional.mse_loss(y_hat[close_mask], y[close_mask], reduction="mean") if close_mask.any() else 0
+        coll_mask = (y < 0)
+        COLL_RMSE = torch.nn.functional.mse_loss(y_hat[coll_mask], y[coll_mask], reduction="mean") if coll_mask.any() else 0
 
-        return RMSE + COLL_RMSE
+        return 0.2*FREE_RMSE + 0.6*CLOSE_RMSE + 0.2*COLL_RMSE
     
 
     collnet = SelfCollNet(fc_layer_sizes=layer_size,
@@ -131,8 +133,10 @@ def main(args):
     min_loss = 1e100
     e_notsaved = 0
 
-    for q, min_dist in test_data_loader:
+    for q, min_dist in val_data_loader:
         test_q, test_min_dist = q.to(device).squeeze(), min_dist.to(device).squeeze()
+    for q, min_dist in test_data_loader:
+        val_q, val_min_dist = q.to(device).squeeze(), min_dist.to(device).squeeze()
 
     for epoch in range(args.epochs):
         loader_tqdm = tqdm.tqdm(train_data_loader)
@@ -153,69 +157,71 @@ def main(args):
             optimizer.zero_grad()
 
 
-            
+        # for validation
+        collnet.eval()
+        with torch.cuda.amp.autocast():
+            min_dist_hat = collnet.forward(val_q)
+            min_dist_hat = min_dist_hat.squeeze()
+            loss_fc_val = loss_fn_fc(min_dist_hat, val_min_dist)
+            loss_val = loss_fc_val
+        scheduler.step(loss_fc_val)
+
+        # for test
         collnet.eval()
         with torch.cuda.amp.autocast():
             min_dist_hat = collnet.forward(test_q)
             min_dist_hat = min_dist_hat.squeeze()
-            loss_fc_test = loss_fn_fc(min_dist_hat, test_min_dist)
-            loss_test = loss_fc_test
-        scheduler.step(loss_fc_test)
+
+            overall_rmse = torch.sqrt(torch.nn.functional.mse_loss(min_dist_hat, test_min_dist))
+
+            mask_free = test_min_dist > 5
+            rmse_free = torch.sqrt(torch.nn.functional.mse_loss(min_dist_hat[mask_free], test_min_dist[mask_free]))
+
+            mask_close = (test_min_dist <= 5) & (test_min_dist >= 0)
+            rmse_close = torch.sqrt(torch.nn.functional.mse_loss(min_dist_hat[mask_close], test_min_dist[mask_close]))
+
+            mask_col = test_min_dist < 0
+            rmse_col = torch.sqrt(torch.nn.functional.mse_loss(min_dist_hat[mask_col], test_min_dist[mask_col]))
         
-        coll_hat_bin = min_dist_hat < 2
-        coll_bin = test_min_dist < 2
-
-        test_accuracy = (coll_bin == coll_hat_bin).sum().item() / test_min_dist.size(dim=0)
-
-        truth_positives = (coll_bin == 1).sum().item() 
-        truth_negatives = (coll_bin == 0).sum().item() 
-
-        confusion_vector = (coll_hat_bin / coll_bin)
-        
-        true_positives = torch.sum(confusion_vector == 1).item()
-        false_positives = torch.sum(confusion_vector == float('inf')).item()
-        true_negatives = torch.sum(torch.isnan(confusion_vector)).item()
-        false_negatives = torch.sum(confusion_vector == 0).item()
-
-        accuracy = ({'tp': true_positives / truth_positives,
-                     'fp': false_positives / truth_negatives,
-                     'tn': true_negatives / truth_negatives,
-                     'fn': false_negatives / truth_positives})
 
         if epoch == 0:
-            min_loss = loss_test
+            min_loss = loss_val
 
-        scheduler.step(loss_test)
+        scheduler.step(loss_val)
 
-        if loss_test < min_loss:
+        if loss_val < min_loss:
             e_notsaved = 0
-            print('saving model', loss_test.item())
-            checkpoint_model_name = chkpt_dir + 'loss_{}_{}_checkpoint_{:02d}_{}_self'.format(loss_test.item(), model_name, epoch, args.seed) + '.pkl'
+            print('saving model', loss_val.item())
+            checkpoint_model_name = chkpt_dir + 'loss_{}_{}_checkpoint_{:02d}_{}_self'.format(loss_val.item(), model_name, epoch, args.seed) + '.pkl'
+            best_model_path = checkpoint_model_name
             torch.save(collnet.state_dict(), checkpoint_model_name)
-            min_loss = loss_test
+            min_loss = loss_val
         print("Epoch: {} (Saved at {})".format(epoch, epoch-e_notsaved))
-        print("[Train] fc loss  : {:.3f}".format(loss_train.item()))
-        print("[Test]  fc loss  : {:.3f}".format(loss_test.item()))
-        print("[Test]  Accuracy : {}".format(test_accuracy))
-        print("[Test]  TP       : {}".format(true_positives / truth_positives))
-        print("[Test]  TN       : {}".format(true_negatives / truth_negatives))
-        print("min_dist         : {}".format(test_min_dist.detach().cpu().numpy()[:2]))
-        print("min_dist_hat     : {}".format(min_dist_hat.detach().cpu().numpy()[:2]))
+        print("[Train] fc loss    : {:.3f}".format(loss_train.item()))
+        print("[Valid] fc loss    : {:.3f}".format(loss_val.item()))
+        print("[Test]  MSE (all)  : {:.3f}".format(overall_rmse.item()))
+        print("[Test]  MSE (free) : {:.3f}".format(rmse_free.item()))
+        print("[Test]  MSE (close): {:.3f}".format(rmse_close.item()))
+        print("[Test]  MSE (col)  : {:.3f}".format(rmse_col.item()))
+        print("min_dist           : {}".format(test_min_dist.detach().cpu().numpy()[:4]))
+        print("min_dist_hat       : {}".format(min_dist_hat.detach().cpu().numpy()[:4]))
         print("=========================================================================================")
 
         with open(log_file_name, 'a') as f:
-            f.write("Epoch: {} (Saved at {}) / Train Loss: {} / Test Loss: {} / Test Accuracy: {} / TP: {} / FP: {} / TN: {} / FN: {}\n".format(epoch,
-                                                                                                                                              epoch - e_notsaved,
-                                                                                                                                              loss_train,
-                                                                                                                                              loss_test,
-                                                                                                                                              test_accuracy,
-                                                                                                                                              [accuracy["tp"]],
-                                                                                                                                              [accuracy["fp"]],
-                                                                                                                                              [accuracy["tn"]],
-                                                                                                                                              [accuracy["fn"]]))
+            f.write("Epoch: {} (Saved at {}) / Train Loss: {} / Valid Loss: {} / Test MSE(all): {} / Test MSE(free): {} / Test MSE(close): {} / Test MSE(col): {}\n".format(epoch,
+                                                                                                                                                                            epoch - e_notsaved,
+                                                                                                                                                                            loss_train,
+                                                                                                                                                                            loss_val,
+                                                                                                                                                                            overall_rmse,
+                                                                                                                                                                            rmse_free,
+                                                                                                                                                                            rmse_close,
+                                                                                                                                                                            rmse_col))
 
         e_notsaved += 1
-    torch.save(collnet.state_dict(), model_dir+'ss{}.pkl'.format(model_name))
+    # torch.save(collnet.state_dict(), model_dir+'ss{}.pkl'.format(model_name))
+    if best_model_path:
+        shutil.copy(best_model_path, os.path.join(model_dir, "self_collision.pkl"))
+    torch.save
 
 
 
@@ -225,7 +231,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--epochs", type=int, default=100)
-    parser.add_argument("--batch_size", type=int, default=500000)
+    parser.add_argument("--batch_size", type=int, default=5000000)
     parser.add_argument("--learning_rate", type=float, default=2e-3)
     
     args = parser.parse_args()
